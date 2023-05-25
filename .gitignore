@@ -1,5 +1,5 @@
 # Custom
-data/large
+data/
 .DS_Store
 Untitled*.ipynb
 tmp*

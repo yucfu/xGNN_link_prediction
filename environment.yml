@@ -1,4 +1,4 @@
-name: linkpred_wc
+name: linkpred
 channels:
   - pyg
   - pytorch
