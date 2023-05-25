@@ -1,4 +1,4 @@
-# Link Prediction Explanations for Graph Neural Networks Evaluation
+# Evaluation of Link Prediction Explanations 
 Testing explanation methods for GNNs and dependence on Enc/Dec choice.
 
 ```
