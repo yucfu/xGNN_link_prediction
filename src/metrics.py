@@ -827,6 +827,7 @@ def fidelity_original(model,  # is a must
     fid_label_plus = int(predicted_label == target_label) - int(predicted_label_new_plus == target_label)
     fid_prob_plus = log_logits_prob - log_logits_prob_new_plus
 
+
     # 2.2 Calculate Fidelity- score
     # prediction change by keeping important input features and removing unimportant features.
     mask_minus = node_mask.T.matmul(feature_mask)
