@@ -1,6 +1,6 @@
 import torch
 import torch.nn.functional as F
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, accuracy_score
 
 def train(
         model,
@@ -25,7 +25,10 @@ def test(
     ):
     model.eval()
     out = model(data.x, data.edge_index, data.edge_label_index).sigmoid()
-    return roc_auc_score(data.edge_label.cpu().numpy(), out.cpu().numpy())
+    pred = out >= 0.5
+    auc = roc_auc_score(data.edge_label.cpu().numpy(), out.cpu().numpy())
+    acc = accuracy_score(data.edge_label.cpu().numpy(), pred)
+    return auc, acc
 
 def train_vgae(
         model,

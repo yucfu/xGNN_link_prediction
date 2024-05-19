@@ -9,8 +9,12 @@ from torch_geometric.utils import k_hop_subgraph
 from torch_geometric import seed_everything
 
 from typing import Optional, Union, Any
-from explainers import gnnexplainer, ig, deconvolution
+from explainers import gnnexplainer, ig, deconvolution, grad, empty, pgmexplainer, \
+    reduced_graph_complete_explanation, softzorro, zorro_baseline, zorro, graphlime
 from tqdm import tqdm
+
+import pgmexplainer as pe
+
 
 def ws_graph_model(
         N = 500,
@@ -122,6 +126,13 @@ def get_explanation(
     model,
     train_data,
     edge_label_index,
+    test_data,
+    num_hops,
+    tau=0.15,
+    model_type=None,
+    dataset=None,
+    top_num_neighbors='half',
+    reduction=None,
     **kwargs
     ):
     if explainer == 'gnnexplainer':
@@ -147,6 +158,79 @@ def get_explanation(
             edge_label_index
         )
 
-    edge_mask = explanation['edge_mask'].numpy()
-    node_mask = explanation['node_mask'].numpy()
-    return explanation, edge_mask, node_mask
+    if explainer == 'grad':
+        explanation = grad(
+            model,
+            train_data.x,
+            train_data.edge_index,
+            edge_label_index
+        )
+    if explainer == 'empty':
+        explanation = empty(
+            model,
+            train_data.x,
+            train_data.edge_index,
+            edge_label_index
+        )
+
+    if explainer == 'pgmexplainer':
+        explanation = pgmexplainer(
+            model,
+            edge_label_index,
+            test_data,
+            num_hops,
+            reduction,
+            top_num_neighbors
+        )
+
+    if explainer == 'reduced_graph_complete_explanation':
+        explanation = reduced_graph_complete_explanation(
+            model,
+            train_data.x,
+            train_data.edge_index,
+            edge_label_index,
+            num_hops,
+            top_num_neighbors
+        )
+
+    if explainer == 'softzorro':
+        explanation = softzorro(
+            model,
+            train_data.x,
+            train_data.edge_index,
+            edge_label_index
+        )
+
+    if explainer == 'zorro_baseline':
+        explanation = zorro_baseline(
+            model,
+            train_data.x,
+            train_data.edge_index,
+            edge_label_index,
+            tau
+        )
+
+    if explainer == 'zorro':
+        explanation = zorro(
+            model,
+            train_data.x,
+            train_data.edge_index,
+            edge_label_index,
+            tau,
+            model_type,
+            dataset
+        )
+
+    if explainer == 'graphlime':
+        explanation = graphlime(
+            model,
+            train_data.x,
+            train_data.edge_index,
+            edge_label_index
+        )
+
+    # edge_mask = explanation['edge_mask'].numpy()
+    # node_mask = explanation['node_mask'].numpy()
+    # return explanation, edge_mask, node_mask
+
+    return explanation

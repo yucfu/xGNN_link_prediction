@@ -1,3 +1,4 @@
+import os
 import os.path as osp
 
 import torch
@@ -31,10 +32,11 @@ import seaborn as sb
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 graph_model = 'ws'
-model_name = 'sage'
-explainer = 'ig'
+model_name = 'gcn'
+explainer = 'gnnexplainer'
 decoder = 'inner'
-binary_threshold = 0.4
+binary_threshold = 0.5
+load_model = False
 
 if model_name == 'vgae':
     sigmoid = False
@@ -51,8 +53,9 @@ else:
     from train_test import test
 
 output_folder = f"../outputs/{graph_model}/{model_name}/{explainer}/"
+model_folder = f"../outputs/{graph_model}/{model_name}/"
 
-for seed in range(10):
+for seed in range(1):
     print(seed, graph_model, model_name, explainer, decoder, return_type, binary_threshold)  
 
     seed_everything(seed)
@@ -70,6 +73,8 @@ for seed in range(10):
         diag_mu = 0.8
         diag_sigma = 0.1
         G, A, N, E, node_block_labels = sbm_graph_model(seed=seed)
+        # node_block_labels is ground truth
+        # print(node_block_labels)
 
     seed_everything(seed)
     X = np.eye(N).astype(np.float32)
@@ -104,23 +109,49 @@ for seed in range(10):
     if graph_model == 'sbm':
         tot_epochs = 41
 
-    optimizer = torch.optim.Adam(params=model.parameters(), lr=0.001)
-
-    seed_everything(0)
-    for epoch in range(1, tot_epochs):
-        loss = train(model, optimizer, train_data)
-        if epoch % 20 == 0:
-            if model_name == 'vgae':
-                val_auc = test(model, train_data, val_data)
-                test_auc = test(model, train_data, test_data)
-            else:
-                val_auc = test(model, val_data)
-                test_auc = test(model, test_data)
-            print(f'Epoch: {epoch:02d}, Loss: {loss:.4f}, Val: {val_auc:.4f}, '
-                f'Test: {test_auc:.4f}')
+    if load_model:
+        model.load_state_dict(torch.load(f"{model_folder}/model.pt"))
+        model.eval()
+        print('Model loaded')
+        val_auc = test(model, val_data)
+        test_auc = test(model, test_data)
+        print(f'Val Accuracy: {val_auc:.4f}, Test Accuracy: {test_auc:.4f}')
+    else:
+        optimizer = torch.optim.Adam(params=model.parameters(), lr=0.001)
+        seed_everything(0)
+        for epoch in range(1, tot_epochs):
+            loss = train(model, optimizer, train_data)
+            if epoch % 20 == 0:
+                if model_name == 'vgae':
+                    val_auc = test(model, train_data, val_data)
+                    test_auc = test(model, train_data, test_data)
+                else:
+                    val_auc = test(model, val_data)
+                    test_auc = test(model, test_data)
+                print(f'Epoch: {epoch:02d}, Loss: {loss:.4f}, Val: {val_auc:.4f}, '
+                    f'Test: {test_auc:.4f}')
+        if not osp.exists(osp.dirname(model_folder)):
+            os.makedirs(osp.dirname(model_folder))
+        torch.save(model.state_dict(), f'{model_folder}/model.pt')
             
     tpr_tnr_results = []
+
+    # select random edges
+    selected_nodes_random_seed = 42
+    num_selected_query_edges = 100
+
+    # select edges with positive labels, and sample the num we need
+    positive_idx = (val_data.edge_label == torch.ones(val_data.edge_label.shape)).nonzero().flatten().numpy()
+    print('The number of positive edges: ', len(positive_idx))
+    # num_selected_query_edges = min(num_selected_query_edges, len(positive_idx))
+
+    if num_selected_query_edges > len(positive_idx):
+        num_selected_query_edges = len(positive_idx)
+
+    # # For each edge
     for i in tqdm(range(val_data.edge_label_index.size(1))):
+    # For each sampled edge
+    # for i in tqdm(range(num_selected_query_edges)):
         edge_label_index = val_data.edge_label_index[:, [i]]
         source_node, target_node = edge_label_index.numpy()[:, 0]
 
@@ -130,13 +161,15 @@ for seed in range(10):
         else:
             pred = model(train_data.x, train_data.edge_index, edge_label_index).item()
         if graph_model == 'ws':
-            condition = np.abs(source_node-target_node)<(k/2+1)
+            condition = np.abs(source_node-target_node) < (k/2+1)
         if graph_model == 'sbm':
-            condition = node_block_labels[source_node]==node_block_labels[target_node]
-        if condition and int(pred>0.5)==target:
-            source_node, target_node, pred, target
-            
-            explanation, edge_mask, node_mask = get_explanation(
+            condition = node_block_labels[source_node] == node_block_labels[target_node]
+        if condition and int(pred > 0.5) == target:
+            # source_node, target_node, pred, target
+            # explanation, edge_mask, node_mask = get_explanation(
+            #         explainer, model, train_data, edge_label_index, return_type=return_type
+            #     )
+            explanation = get_explanation(
                     explainer, model, train_data, edge_label_index, return_type=return_type
                 )
 
@@ -144,14 +177,20 @@ for seed in range(10):
             node_mask = explanation['node_mask'].numpy()
             
             output_path = osp.join(output_folder, 'masks',
-                            f"{seed}_{i}_{test_auc:.3f}_one_hot_{decoder}_edge_mask.npy") 
+                            f"{seed}_{i}_{test_auc:.3f}_one_hot_{decoder}_edge_mask.npy")
+            if not osp.exists(osp.dirname(output_path)):
+                os.makedirs(osp.dirname(output_path))
             with open(output_path, 'wb') as f:
                 np.save(f, edge_mask)
+
             output_path = osp.join(output_folder, 'masks', 
-                            f"{seed}_{i}_{test_auc:.3f}_one_hot_{decoder}_node_mask.npy") 
+                            f"{seed}_{i}_{test_auc:.3f}_one_hot_{decoder}_node_mask.npy")
+            if not osp.exists(osp.dirname(output_path)):
+                os.makedirs(osp.dirname(output_path))
             with open(output_path, 'wb') as f:
                 np.save(f, node_mask)
 
+            # Get computation graph
             computation_graph = get_computation_graph_as_nx(source_node, target_node, train_data)
 
             if graph_model == 'ws':
@@ -177,7 +216,8 @@ for seed in range(10):
                                     )
             
             tpr, tnr = sensitivity_specificity(conf)
-            
+            print('tpr sensitivity: ', tpr, 'tnr specificity: ', tnr)
+
             if graph_model == 'ws':
                 tpr_tnr_results.append([i, target, pred, source_node, target_node, tpr, tnr, binary_threshold])
             if graph_model == 'sbm':

@@ -8,41 +8,77 @@ from torch_geometric.utils import negative_sampling, remove_self_loops, add_self
 
 from decoders import CosineDecoder
 
+# class LinkGCN(torch.nn.Module):
+#     def __init__(self, in_channels, hidden_channels, out_channels, sim='inner', sigmoid=False):
+#         super().__init__()
+#
+#         self.sigmoid = sigmoid
+#
+#         if sim=='inner':
+#             self.decoder = InnerProductDecoder()
+#         elif sim=='cosine':
+#             self.decoder = CosineDecoder()
+#
+#         self.conv1 = GCNConv(in_channels, hidden_channels)
+#         self.conv2 = GCNConv(hidden_channels, out_channels)
+#
+#     def encoder(self, x, edge_index):
+#         x = self.conv1(x, edge_index).relu()
+#         x = self.conv2(x, edge_index)
+#         return x
+#
+#     def encode(self, x, edge_index):
+#
+#         return self.encoder(x, edge_index)
+#
+#     def decode(self, z, edge_label_index):
+#
+#         return self.decoder(z, edge_label_index, sigmoid=self.sigmoid)
+#
+#     def decode_all(self, z):
+#
+#         return self.decoder.forward_all(z, sigmoid=self.sigmoid)
+#
+#     def forward(self, x, edge_index, edge_label_index):
+#         z = self.encode(x, edge_index)
+#         return self.decode(z, edge_label_index).view(-1)
+
+
 class LinkGCN(torch.nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, sim='inner', sigmoid=False):
         super().__init__()
 
         self.sigmoid = sigmoid
 
-        if sim=='inner':
+        if sim == 'inner':
             self.decoder = InnerProductDecoder()
-        elif sim=='cosine':
-            self.decoder = CosineDecoder()  
+        elif sim == 'cosine':
+            self.decoder = CosineDecoder()
 
         self.conv1 = GCNConv(in_channels, hidden_channels)
         self.conv2 = GCNConv(hidden_channels, out_channels)
 
-    def encoder(self, x, edge_index):
-        x = self.conv1(x, edge_index).relu()
-        x = self.conv2(x, edge_index)
+    def encoder(self, x, edge_index, edge_weight=None):
+        x = self.conv1(x, edge_index, edge_weight).relu()
+        x = self.conv2(x, edge_index, edge_weight)
         return x
 
-    def encode(self, x, edge_index):
-        
-        return self.encoder(x, edge_index)
+    def encode(self, x, edge_index, edge_weight=None):
+
+        return self.encoder(x, edge_index, edge_weight)
 
     def decode(self, z, edge_label_index):
-        
+
         return self.decoder(z, edge_label_index, sigmoid=self.sigmoid)
 
     def decode_all(self, z):
-        
+
         return self.decoder.forward_all(z, sigmoid=self.sigmoid)
 
-    def forward(self, x, edge_index, edge_label_index):
-        z = self.encode(x, edge_index)
+        # [2, 96]: [[1, 2], [4,5], ]
+    def forward(self, x, edge_index, edge_label_index, edge_weight=None):
+        z = self.encode(x, edge_index, edge_weight)
         return self.decode(z, edge_label_index).view(-1)
-    
 
 class LinkGIN(torch.nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, sim='inner', sigmoid=False):
