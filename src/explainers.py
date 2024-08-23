@@ -410,7 +410,8 @@ def pgmexplainer(model, edge_label_index, test_data, num_hops, reduction, top_nu
     return explanation
 
 
-def reduced_graph_complete_explanation(model, x, edge_index, edge_label_index, num_hops, top_num_neighbors):
+def reduced_graph_complete_explanation(model, x, edge_index, edge_label_index, num_hops,
+                                       top_num_neighbors, random_nodes):
     source_node, target_node = edge_label_index.numpy()[:, 0]
 
     num_nodes, num_edges = x.size(0), edge_index.size(1)
@@ -424,7 +425,8 @@ def reduced_graph_complete_explanation(model, x, edge_index, edge_label_index, n
 
     neighbors, computation_graph_edge_index, edge_mask = reduce_graph(model, x, edge_index,
                                                                       edge_label_index, num_hops,
-                                                                      computation_graph_edge_index, top_num_neighbors)
+                                                                      computation_graph_edge_index, top_num_neighbors,
+                                                                      random_nodes=random_nodes)
 
     print('Neighbors after reduction: ', len(neighbors))
     print(f'Number of edges in the computation graph after reduction: {computation_graph_edge_index.shape}')

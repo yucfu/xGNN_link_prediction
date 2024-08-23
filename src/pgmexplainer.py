@@ -406,6 +406,7 @@ class PGMExplainer:
             for node in neighbors:
                 seed = np.random.randint(2)
                 if seed == 1:
+                    # latent: whether the features of this node are perturbed
                     latent = 1
                     # computation_graph_feature_matrix_perturb = self.perturb_features_on_node(computation_graph_feature_matrix_perturb, node, random=seed)
                     X_perturb = self.perturb_features_on_edge(X_perturb, edge_label_index, random=seed)
@@ -468,10 +469,13 @@ class PGMExplainer:
 
             Samples.append(sample)
             Pred_Samples.append(sample_bool)
-
+        # Samples: the latent status of each node in each sample (whether the features of the node are perturbed)
+        # Pred_Samples: the status of each node in each sample (whether the probability of the edge is changed significantly)
         Samples = np.asarray(Samples)
         Pred_Samples = np.asarray(Pred_Samples)
         Combine_Samples = Samples - Samples
+
+        # iterate over 100 times
         for s in range(Samples.shape[0]):
             Combine_Samples[s] = np.asarray(
                 [Samples[s, i] * 10 + Pred_Samples[s, i] + 1 for i in range(Samples.shape[1])])

@@ -37,36 +37,13 @@ def embedding_sim(model, x, edge_index, edge_label_index, num_layers):
     return sim_dict_s, sim_dict_t
 
 
-def reduce_graph(model, x, edge_index, edge_label_index, num_layers, computation_graph_edge_index, top_num_neighbors='half'):
+def reduce_graph(model, x, edge_index, edge_label_index, num_layers, computation_graph_edge_index,
+                 top_num_neighbors='half', random_nodes=False):
 
-    # source_node, target_node = edge_label_index.numpy()[:, 0]
-    #
     # # 1. Get the neighbors of source node and target node
-    # embeddings = model.encode(x=x, edge_index=edge_index)  # [2708, 64]
-    #
-    # neighbors_s, _, _, _ = k_hop_subgraph(int(source_node), num_hops=num_layers, edge_index=edge_index,
-    #                                       relabel_nodes=False)  # num_nodes=num_nodes
-    # neighbors_t, _, _, _ = k_hop_subgraph(int(target_node), num_hops=num_layers, edge_index=edge_index,
-    #                                       relabel_nodes=False)  # num_nodes=num_nodes
-    # neighbors_s = neighbors_s.numpy()
-    # neighbors_t = neighbors_t.numpy()
-    #
     # # 2. Compute the similarity of the neighbor of the source node with the target node
-    # sim_dict_s = {}
-    # for n in neighbors_s:
-    #     sim = torch.sigmoid(torch.dot(embeddings[target_node], embeddings[n])).item()
-    #     sim_dict_s[n] = sim
-    #
-    # sim_dict_t = {}
-    # for n in neighbors_t:
-    #     sim = torch.sigmoid(torch.dot(embeddings[source_node], embeddings[n])).item()
-    #     sim_dict_t[n] = sim
-    #
-    # sim_dict_s = sorted(sim_dict_s.items(), key=lambda x: x[1], reverse=True)
-    # sim_dict_t = sorted(sim_dict_t.items(), key=lambda x: x[1], reverse=True)
 
     sim_dict_s, sim_dict_t = embedding_sim(model, x, edge_index, edge_label_index, num_layers)
-
     # TODO: Decide the number of top neighbors to include
     # Option 1: merge two dicts and take the top nodes
     merged_dict = {}
@@ -83,8 +60,10 @@ def reduce_graph(model, x, edge_index, edge_label_index, num_layers, computation
 
     merged_dict = sorted(merged_dict.items(), key=lambda x: x[1], reverse=True)
 
-    if top_num_neighbors == 'half':
-        top_num_neighbors = int(len(merged_dict)/2)
+    # if top_num_neighbors == 'half':
+    #     top_num_neighbors = int(len(merged_dict) / 2)
+    if top_num_neighbors.endswith('%'):
+        top_num_neighbors = int(len(merged_dict) * int(top_num_neighbors[:-1]) / 100)
     print('top_num_neighbors: ', top_num_neighbors)
 
     neighbors = sorted([x[0] for x in merged_dict][:top_num_neighbors])
@@ -99,13 +78,15 @@ def reduce_graph(model, x, edge_index, edge_label_index, num_layers, computation
     # neighbors_keep_t = [x[0] for x in sim_dict_t][:top_num_neighbors]
     # neighbors = sorted(list(set(neighbors_keep_s + neighbors_keep_t)))
 
+    print('Random Nodes: ', random_nodes)
     # Option 3: Take random nodes as explanations.
-    random.seed(42)
-    neighbors = [x[0] for x in merged_dict]
-    if len(neighbors) > top_num_neighbors:
-        neighbors = sorted(random.sample(neighbors, top_num_neighbors))
-    else:
-        neighbors = sorted(neighbors)
+    if random_nodes:
+        random.seed(42)
+        neighbors = [x[0] for x in merged_dict]
+        if len(neighbors) > top_num_neighbors:
+            neighbors = sorted(random.sample(neighbors, top_num_neighbors))
+        else:
+            neighbors = sorted(neighbors)
 
     print(f'Number of edges in the computation graph before reduction: {computation_graph_edge_index.shape}')
 

@@ -17,10 +17,10 @@ import pgmexplainer as pe
 
 
 def ws_graph_model(
-        N = 500,
-        k = 4,
-        p = 0.001,
-        seed = None):
+        N=500,
+        k=4,
+        p=0.001,
+        seed=None):
     if seed is not None:
         seed_everything(seed)
     G = nx.watts_strogatz_graph(N, k, p, seed=seed)
@@ -28,19 +28,20 @@ def ws_graph_model(
     N, E = G.number_of_nodes(), G.number_of_edges()
     return G, A, N, E
 
+
 def sbm_graph_model(
-        n_blocks = 3,
-        avg_block_size = 50,
-        block_size_dev = 2,
-        mu = 0.01,
-        sigma = 0.001,
-        diag_mu = 0.8,
-        diag_sigma = 0.1,
+        n_blocks=3,
+        avg_block_size=50,
+        block_size_dev=2,
+        mu=0.01,
+        sigma=0.001,
+        diag_mu=0.8,
+        diag_sigma=0.1,
         seed=None
-        ):
+):
     if seed is not None:
         seed_everything(seed)
-    sizes = np.random.randint(avg_block_size-block_size_dev, high=avg_block_size+block_size_dev, size=n_blocks)
+    sizes = np.random.randint(avg_block_size - block_size_dev, high=avg_block_size + block_size_dev, size=n_blocks)
     probs = np.random.normal(mu, scale=sigma, size=(n_blocks, n_blocks))
     np.fill_diagonal(probs, np.random.normal(diag_mu, scale=diag_sigma, size=n_blocks))
     probs = np.triu(probs) + np.triu(probs, k=1).T
@@ -60,9 +61,7 @@ def to_networkx_simple(
         data: 'torch_geometric.data.Data',
         node_names: Optional[list] = [],
         to_undirected: Optional[Union[bool, str]] = False
-    ) -> Any:
-    
-
+) -> Any:
     G = nx.Graph() if to_undirected else nx.DiGraph()
 
     if node_names:
@@ -85,33 +84,37 @@ def to_networkx_simple(
 
     return G
 
+
 def get_computation_graph_as_nx(
         source_node,
         target_node,
         data,
-        num_hops = 2
-        ):
+        num_hops=2
+):
     subset, edge_index, mapping, edge_mask = k_hop_subgraph([source_node, target_node], num_hops, data.edge_index)
     computation_graph = Data(data.x[subset, :], data.edge_index[:, edge_mask])
     computation_graph = to_networkx_simple(computation_graph, node_names=list(subset.numpy()), to_undirected=True)
     return computation_graph
 
-def normalize_bounds(v, u = 1., l = 0.5):
+
+def normalize_bounds(v, u=1., l=0.5):
     vmin = np.min(v)
     vmax = np.max(v)
-    return np.array([l+(x-vmin)*(u-l)/(vmax-vmin) for x in v])
+    return np.array([l + (x - vmin) * (u - l) / (vmax - vmin) for x in v])
+
 
 def load_curves(graph_model, model_name, explainer, feat_type, tot_range, target=1, seed=0):
     path = f"../outputs/{graph_model}/{model_name}/{explainer}/curves/"
     print(graph_model, model_name, explainer, feat_type, tot_range, target)
-    deletions = []   
+    deletions = []
     for i in range(tot_range):
         for fname in os.listdir(path):
-            if fname.endswith(f'{feat_type}_curve.npy') and fname.split('_')[0] == str(seed) and fname.split('_')[1] == str(i):
+            if fname.endswith(f'{feat_type}_curve.npy') and fname.split('_')[0] == str(seed) and fname.split('_')[
+                1] == str(i):
                 if target == 1:
-                    right_pred = float(fname.split('_')[-5])>0.5
+                    right_pred = float(fname.split('_')[-5]) > 0.5
                 elif target == 0:
-                    right_pred = float(fname.split('_')[-5])<0.5
+                    right_pred = float(fname.split('_')[-5]) < 0.5
                 else:
                     right_pred = True
                 if right_pred:
@@ -121,40 +124,42 @@ def load_curves(graph_model, model_name, explainer, feat_type, tot_range, target
     print(len(deletions))
     return deletions
 
+
 def get_explanation(
-    explainer,
-    model,
-    train_data,
-    edge_label_index,
-    test_data,
-    num_hops,
-    tau=0.15,
-    model_type=None,
-    dataset=None,
-    top_num_neighbors='half',
-    reduction=None,
-    **kwargs
-    ):
+        explainer,
+        model,
+        train_data,
+        edge_label_index,
+        test_data,
+        num_hops,
+        tau=0.15,
+        model_type=None,
+        dataset=None,
+        top_num_neighbors='half',
+        reduction=None,
+        random_nodes=False,
+        **kwargs
+):
     if explainer == 'gnnexplainer':
         explanation = gnnexplainer(
-            model, 
-            train_data.x, 
-            train_data.edge_index, 
-            edge_label_index, 
+            model,
+            train_data.x,
+            train_data.edge_index,
+            edge_label_index,
             return_type=kwargs['return_type']
-            )
+        )
     if explainer == 'ig':
         explanation = ig(
-                        model,
-                        train_data.x, 
-                        train_data.edge_index, 
-                        edge_label_index
-                    )
+            model,
+            train_data.x,
+            train_data.edge_index,
+            edge_label_index
+        )
     if explainer == 'deconvolution':
         explanation = deconvolution(
             model,
-            train_data.x, 
-            train_data.edge_index, 
+            train_data.x,
+            train_data.edge_index,
             edge_label_index
         )
 
@@ -190,7 +195,8 @@ def get_explanation(
             train_data.edge_index,
             edge_label_index,
             num_hops,
-            top_num_neighbors
+            top_num_neighbors,
+            random_nodes
         )
 
     if explainer == 'softzorro':

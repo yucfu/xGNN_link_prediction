@@ -39,7 +39,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 graph_model = 'cora'  # PubMed, cora
 model_name = 'gcn'  # ['gin', 'gcn', 'sage', 'vgae']
-explainer = 'zorro'
+explainer = 'ig'
 # ['random', 'ig', 'gnnexplainer', 'deconvolution', 'grad', 'empty', 'pgmexplainer', 'softzorro']
 # reduced_graph_complete_explanation
 # zorro_baseline, zorro
@@ -49,13 +49,15 @@ tau = 0.02
 seed = 0
 
 decoder = 'inner'  # ['inner', 'cosine']
-edge_noise_type = 'bernoulli_whole'  # ['bernoulli_whole', 'bernoulli_computation', 'kde']
+edge_noise_type = 'all'
+# ['bernoulli_whole', 'bernoulli_computation', 'bernoulli_1/2', 'kde', 'kde_1-mask', 'none']
 load_model = True
 
 # Reduction parameters
-reduction = False
-top_num_neighbors = 0
+reduction = True
+top_num_neighbors = '50%'
 # 'half', 5, 10
+random_nodes = True
 
 if model_name == 'vgae':
     sigmoid = False
@@ -221,7 +223,7 @@ for seed in range(1):
                 edge_mask = np.ones(train_data.edge_index.size(1))
                 feature_mask = np.ones(train_data.x.size(1))
                 explanation = get_explanation(explainer, model, train_data, edge_label_index, test_data, num_hops,
-                                              top_num_neighbors=top_num_neighbors)
+                                              top_num_neighbors=top_num_neighbors, random_nodes=random_nodes)
                 node_mask = np.expand_dims(explanation['node_mask'], axis=0)  # (1, 31)
                 # edge_to_include is binary masks over the edges of the computation graph to
                 # represent the edges in the reduced computation graph
@@ -304,8 +306,11 @@ for seed in range(1):
                                               return_type=return_type)
 
                 # Only keep the positive masks and make the rest to be 0
-                edge_mask = explanation['edge_mask'].numpy()  # level mask with shape[num_edges]
-                edge_mask = np.array([max(element, 0) for element in edge_mask])
+                # edge_mask = explanation['edge_mask'].numpy()  # level mask with shape[num_edges]
+                # edge_mask = np.array([max(element, 0) for element in edge_mask])
+
+                edge_mask = explanation['edge_mask']  # level mask with shape[num_edges]
+                edge_mask = torch.Tensor([max(element.item(), 0) for element in explanation['edge_mask']])
 
                 feature_mask = explanation['node_mask'].numpy()
                 feature_mask = np.array([[max(element, 0) for element in sub_list] for sub_list in feature_mask])
@@ -553,31 +558,36 @@ for seed in range(1):
                                                validity=False,
                                                edge_noise_type=edge_noise_type)
 
+                # TODO: 这里需要进一步确认
+                #  instead of using the node mask converted as node masks, we now use all the nodes,
+                #  but also include edge masks as edge weights
                 fid_plus_label, fid_plus_prob, fid_minus_label, fid_minus_prob = \
                     fidelity_original(model, source_node=source_node, target_node=target_node,
                                       target_label=target, full_feature_matrix=train_data.x,
-                                      edge_index=train_data.edge_index, node_mask=node_mask_converted,
-                                      feature_mask=feature_mask, edge_mask=edge_mask, device="cpu")
+                                      edge_index=train_data.edge_index, node_mask=None,  # node_mask_converted
+                                      feature_mask=feature_mask, edge_mask=edge_mask[sub_edge_mask], device="cpu")
+
+                print('edge_mask of computation graph: ', edge_mask[sub_edge_mask])
 
                 # case 2
                 # f_with_edge_mask = None
-                # f_with_edge_mask, _ = fidelity(model,
-                #                                source_node=source_node,
-                #                                target_node=target_node,
-                #                                full_feature_matrix=train_data.x,
-                #                                edge_index=train_data.edge_index,
-                #                                node_mask=None,
-                #                                feature_mask=feature_mask,
-                #                                # edge_mask should only contain the edge masks of the computation graph.
-                #                                # And we need to distort edge masks based on this.
-                #                                edge_mask=edge_mask[sub_edge_mask],  # [96]
-                #                                samples=100,
-                #                                random_seed=12345,
-                #                                device="cpu",
-                #                                validity=False,
-                #                                edge_noise_type=edge_noise_type)
+                f_with_edge_mask, _, _ = fidelity(model,
+                                                  source_node=source_node,
+                                                  target_node=target_node,
+                                                  full_feature_matrix=train_data.x,
+                                                  edge_index=train_data.edge_index,
+                                                  node_mask=None,
+                                                  feature_mask=feature_mask,
+                                                  # edge_mask should only contain the edge masks of the computation graph.
+                                                  # And we need to distort edge masks based on this.
+                                                  edge_mask=edge_mask[sub_edge_mask],  # [96]    # None
+                                                  samples=100,
+                                                  random_seed=12345,
+                                                  device="cpu",
+                                                  validity=False,
+                                                  edge_noise_type=edge_noise_type)
 
-            f_with_edge_mask = None
+            # f_with_edge_mask = None
 
             fidelity_dict = {
                 'fid_plus_label': fid_plus_label,
