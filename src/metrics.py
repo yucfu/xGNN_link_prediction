@@ -512,7 +512,8 @@ def fidelity(model,  # is a must
     """
     Distortion/Fidelity (for Node Classification), modified for link prediction
     :param model: GNN model which is explained
-    :param node_idx: The node which is explained
+    :param source_node: The source node of the edge.
+    :param target_node: The target node of the edge.
     :param full_feature_matrix: The feature matrix from the Graph (X)
     :param edge_index: All edges
     :param node_mask: Is a (binary) tensor with 1/0 for each node in the computational graph
@@ -542,7 +543,7 @@ def fidelity(model,  # is a must
     # TODO: check if this is correct
     edge_label_index = mapping.unsqueeze(dim=1)
 
-    # get predicted label
+    # get predicted label, no need to use the edge_mask in the ground truth, all edges are used equally
     log_logits = model(x=computation_graph_feature_matrix,
                        edge_index=computation_graph_edge_index,
                        edge_label_index=edge_label_index)
@@ -559,6 +560,9 @@ def fidelity(model,  # is a must
     num_computation_graph_nodes = computation_graph_feature_matrix.size(0)
     if node_mask is None:  # all nodes selected
         node_mask = torch.ones((1, num_computation_graph_nodes), device=device)
+    #
+    # if edge_mask is None:
+    #     edge_mask = torch.ones(computation_graph_edge_index.size(1), device=device)
 
     (num_nodes, num_features) = full_feature_matrix.size()
     num_nodes_computation_graph = computation_graph_feature_matrix.size(0)
@@ -601,17 +605,17 @@ def fidelity(model,  # is a must
     #  - learn the bernoulli distribution from the adjacency matrix, then ?
     #  - learn the Gumbel-Softmax distribution from the adjacency matrix, then ?
 
-    # # TODO: Steps to generate noise for edge_mask (Part 1)
-    # if edge_mask is not None:
-    #     # Distort the edge masks in this case:
-    #     # keep the important edges and add random noise to the non-important edges.
-    #     edge_mask = torch.Tensor(edge_mask)
-    #
-    #     # Generate 100 of V_sa with each shape being [96], final shape should be [100, 96]
-    #     noise = generate_edge_noise(total_edge_index=edge_index, computation_edge_index=computation_graph_edge_index,
-    #                                 edge_mask=edge_mask,
-    #                                 edge_noise_type=edge_noise_type, samples=samples, random_seed=random_seed)
-    #     print('Noise of the first sample: ', noise[0])
+    # TODO: Steps to generate noise for edge_mask (Part 1)
+    if edge_mask is not None:
+        # Distort the edge masks in this case:
+        # keep the important edges and add random noise to the non-important edges.
+        edge_mask = torch.Tensor(edge_mask)
+
+        # Generate 100 of V_sa with each shape being [96], final shape should be [100, 96]
+        noise = generate_edge_noise(total_edge_index=edge_index, computation_edge_index=computation_graph_edge_index,
+                                    edge_mask=edge_mask, edge_noise_type=edge_noise_type,
+                                    samples=samples, random_seed=random_seed)
+        print('Noise of the first sample: ', noise[0])
 
     change_in_pred_prob = []
 
@@ -627,32 +631,45 @@ def fidelity(model,  # is a must
         perturbed_input = computation_graph_feature_matrix * mask + random_features * (torch.ones(mask.shape) - mask)
 
         # TODO: Steps to generate noise for edge_mask (Part 2)
-        # if edge_mask is not None:
-        #     # If edge_mask is provided, we perturb the edges to get edge-perturbed RDT-Fidelity.
-        #     # print(f'sample {i}')
-        #     # print('edge_mask: ', edge_mask)
-        #     # print('perturbed_edge_importance: ', perturbed_edge_importance)
-        #     random_edge_noise = noise[i]
-        #     perturbed_edge_importance = edge_mask + (1 - edge_mask) * random_edge_noise
-        #     perturbed_edge_importance = perturbed_edge_importance.float()
-        #     # TODO: 测试选中全部edge
-        #     # perturbed_edge_importance = torch.ones(edge_mask.shape)
-        #
-        #     # RDT-Fidelity with edge mask as edge weight, and perturbed
-        #     log_logits = model.forward(x=perturbed_input,  # [31, 1433]
-        #                                edge_index=computation_graph_edge_index,  # [2, 96]
-        #                                edge_label_index=edge_label_index,  # [2, 1]
-        #                                edge_weight=perturbed_edge_importance)  # [96]
-        # else:
-        #     # Otherwise, just use original RDT-Fidelity.
-        #     # 2. get the prediction from the trained model using the perturbed features as input
-        #     log_logits = model.forward(x=perturbed_input,
-        #                                edge_index=computation_graph_edge_index,
-        #                                edge_label_index=edge_label_index)
+        if edge_mask is not None:
+            # If edge_mask is provided, we perturb the edges to get edge-perturbed RDT-Fidelity.
+            # print(f'sample {i}')
+            # print('edge_mask: ', edge_mask)
+            # print('perturbed_edge_importance: ', perturbed_edge_importance)
+            random_edge_noise = noise[i]
+            perturbed_edge_importance = edge_mask + (1 - edge_mask) * random_edge_noise
+            perturbed_edge_importance = perturbed_edge_importance.float()
 
-        log_logits_perturbed = model.forward(x=perturbed_input,
-                                             edge_index=computation_graph_edge_index,
-                                             edge_label_index=edge_label_index)
+            # TODO: 测试选中全部edge
+            if edge_noise_type == 'all':
+                perturbed_edge_importance = torch.ones(edge_mask.shape)
+            # print(edge_mask)
+
+            # TODO: test random edge masks
+            if edge_noise_type == 'random':
+                perturbed_edge_importance = torch.rand_like(edge_mask)
+                perturbed_edge_importance[edge_mask == 0] = 0
+                print('perturbed_edge_importance: ', perturbed_edge_importance)
+                # print(perturbed_edge_importance)
+
+            # RDT-Fidelity with edge mask as edge weight, and perturbed
+            log_logits_perturbed = model.forward(x=perturbed_input,  # [31, 1433]
+                                                 edge_index=computation_graph_edge_index,  # [2, 96]
+                                                 edge_label_index=edge_label_index,  # [2, 1]
+                                                 edge_weight=perturbed_edge_importance)  # [96]
+        else:
+            # Otherwise, just use original RDT-Fidelity.
+            # 2. get the prediction from the trained model using the perturbed features as input
+            log_logits_perturbed = model.forward(x=perturbed_input,
+                                                 edge_index=computation_graph_edge_index,
+                                                 edge_label_index=edge_label_index,
+                                                 edge_weight=None)
+
+        # log_logits_perturbed = model.forward(x=perturbed_input,
+        #                                      edge_index=computation_graph_edge_index,
+        #                                      edge_label_index=edge_label_index,
+        #                                      edge_weight=edge_mask)
+
         perturbed_predicted_label = convert_logit_to_label(log_logits_perturbed, sigmoid=True)
 
         change_in_pred_prob.append(log_logits.sigmoid().item() - log_logits_perturbed.sigmoid().item())
@@ -795,7 +812,8 @@ def fidelity_original(model,  # is a must
     # TODO: 1. Compute the original prediction.
     log_logits = model(x=computation_graph_feature_matrix,
                        edge_index=computation_graph_edge_index,
-                       edge_label_index=edge_label_index)
+                       edge_label_index=edge_label_index,
+                       edge_weight=None)
     log_logits_prob = log_logits.sigmoid().item()
 
     # original prediction using the whole computation graph
@@ -818,23 +836,24 @@ def fidelity_original(model,  # is a must
     # Prediction change by removing important nodes/edges/features.
     mask_plus = (1 - node_mask).T.matmul(feature_mask)
     masked_input_plus = computation_graph_feature_matrix * mask_plus
-    log_logits_new_plus = model.forward(x=masked_input_plus,
-                                        edge_index=computation_graph_edge_index,
-                                        edge_label_index=edge_label_index)
+    log_logits_new_plus = model(x=masked_input_plus,
+                                edge_index=computation_graph_edge_index,
+                                edge_label_index=edge_label_index,
+                                edge_weight=edge_mask)
     predicted_label_new_plus = convert_logit_to_label(log_logits_new_plus, sigmoid=True)
     log_logits_prob_new_plus = log_logits_new_plus.sigmoid().item()
 
     fid_label_plus = int(predicted_label == target_label) - int(predicted_label_new_plus == target_label)
     fid_prob_plus = log_logits_prob - log_logits_prob_new_plus
 
-
     # 2.2 Calculate Fidelity- score
     # prediction change by keeping important input features and removing unimportant features.
     mask_minus = node_mask.T.matmul(feature_mask)
     masked_input_minus = computation_graph_feature_matrix * mask_minus
-    log_logits_new_minus = model.forward(x=masked_input_minus,
-                                         edge_index=computation_graph_edge_index,
-                                         edge_label_index=edge_label_index)
+    log_logits_new_minus = model(x=masked_input_minus,
+                                 edge_index=computation_graph_edge_index,
+                                 edge_label_index=edge_label_index,
+                                 edge_weight=edge_mask)
     predicted_label_new_minus = convert_logit_to_label(log_logits_new_minus, sigmoid=True)
     log_logits_prob_new_minus = log_logits_new_minus.sigmoid().item()
 

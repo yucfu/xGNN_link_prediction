@@ -799,6 +799,7 @@ class Zorro(AbstractGraphExplainer):
 
         self.greedy = greedy
         if self.greedy:
+            self.greediness = 30
             self.node_greediness = 10
             self.feature_greediness = 30
             self.sorted_possible_nodes = []
@@ -997,6 +998,10 @@ class Zorro(AbstractGraphExplainer):
                         restricted_possible_elements[0, index] = 1
                         top_index_list.append(index)
                         # possible alternative based on initial distortion improve
+
+                        # # initial greediness
+                        # if counter == self.greediness:
+                        #     break
 
                         # nodes
                         if selected_elements is self.selected_nodes:
@@ -1311,7 +1316,7 @@ class Zorro(AbstractGraphExplainer):
 
     # TODO: In this new function, include all nodes masks from the results of top similar nodes. Then add features.
     def _determine_minimal_set_features(self, initial_distortion, tau, node_masks, possible_features,
-                                        save_initial_improve=False, edge_label_index=None):
+                                        save_initial_improve=False, edge_label_index=None, max_optimization_steps=np.inf):
         current_distortion = initial_distortion
         if self.record_process_time:
             last_time = time.time()
@@ -1323,7 +1328,7 @@ class Zorro(AbstractGraphExplainer):
         num_selected_features = 0
 
         count = 0
-        while current_distortion < 1 - tau and count < np.inf:
+        while current_distortion < 1 - tau and count < max_optimization_steps:
             count += 1
             if num_selected_features == 0:
                 best_feature, improve_in_distortion_by_feature = self.argmax_distortion_general(
@@ -1346,11 +1351,32 @@ class Zorro(AbstractGraphExplainer):
             if self.ensure_improvement and improve_in_distortion_by_feature < .00000001:
                 pass
 
+            if best_feature is None:
+                break
+
+            print('best_feature: ', best_feature)
+            print('impove_in_distortion_by_feature: ', improve_in_distortion_by_feature)
+
+            # .00000001
+            if improve_in_distortion_by_feature >= 0:
+                self.selected_features[0, best_feature] = 1
+                num_selected_features += 1
+                executed_selection = [np.nan, best_feature]
+                current_distortion = self.distortion()
+                executed_selection.append(current_distortion)
+            else:
+                # Remove the feature
+                possible_features[0, best_feature] = 0
+                executed_selection = None
+
             self.selected_features[0, best_feature] = 1
             num_selected_features += 1
             executed_selection = [np.nan, best_feature]
 
             current_distortion = self.distortion()
+            print('count: ', count)
+            print(current_distortion)
+            print(executed_selection)
 
             print(current_distortion)
             executed_selection.append(current_distortion)
@@ -1743,6 +1769,7 @@ class Zorro(AbstractGraphExplainer):
 
                 self.epoch = 1
                 if use_precomputed_node_mask_as_fixed:
+                    print('Option 2.')
                     # Use zorro_baseline to extract node masks and keep them fixed.
                     zorro = ZorroBaseline(self.model, device='cpu', log=True, record_process_time=False, samples=100)
                     node_masks, feature_mask, fidelity_list = zorro.explain_link(edge_label_index=edge_label_index,
@@ -1781,6 +1808,7 @@ class Zorro(AbstractGraphExplainer):
                         edge_label_index=edge_label_index
                     )
                 else:
+                    print('Option 1.')
                     minimal_nodes_and_features_sets, count = self.get_minimal_sets(
                         initial_distortion,
                         tau,
